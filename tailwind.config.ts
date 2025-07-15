@@ -52,6 +52,19 @@ export default {
 					DEFAULT: 'hsl(var(--card))',
 					foreground: 'hsl(var(--card-foreground))'
 				},
+				'ai-primary': {
+					DEFAULT: 'hsl(var(--ai-primary))',
+					foreground: 'hsl(var(--ai-primary-foreground))'
+				},
+				'ai-secondary': 'hsl(var(--ai-secondary))',
+				'ai-accent': 'hsl(var(--ai-accent))',
+				'ai-muted': 'hsl(var(--ai-muted))',
+				'upload-bg': 'hsl(var(--upload-bg))',
+				'upload-border': 'hsl(var(--upload-border))',
+				'upload-hover': 'hsl(var(--upload-hover))',
+				'connecting': 'hsl(var(--connecting))',
+				'success': 'hsl(var(--success))',
+				'warning': 'hsl(var(--warning))',
 				sidebar: {
 					DEFAULT: 'hsl(var(--sidebar-background))',
 					foreground: 'hsl(var(--sidebar-foreground))',
