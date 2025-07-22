@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Send, Mic, MicOff, User, Bot } from "lucide-react";
+import { Mic, MicOff, User, Bot, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -21,12 +20,53 @@ interface ChatMessage {
   sender: 'ai' | 'candidate' | 'system';
 }
 
+// Add speech recognition types
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onaudiostart: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onaudioend: ((this: SpeechRecognition, ev: Event) => any) | null;
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null;
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null;
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+declare var SpeechRecognition: {
+  prototype: SpeechRecognition;
+  new(): SpeechRecognition;
+};
+
 export const InterviewChat = ({ candidateName, position, jobDescription, onInterviewComplete }: InterviewChatProps) => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [currentInput, setCurrentInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [interviewPhase, setInterviewPhase] = useState<'introduction' | 'technical' | 'behavioral' | 'conclusion'>('introduction');
+  const [currentTranscript, setCurrentTranscript] = useState("");
+  const [speechSupported, setSpeechSupported] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
   
   // Simulate WebSocket connection for demo - replace with actual WebSocket URL
   const { isConnected, sendMessage, messages } = useWebSocket(
@@ -79,39 +119,139 @@ export const InterviewChat = ({ candidateName, position, jobDescription, onInter
   };
 
   const askQuestion = (question: string) => {
-    addMessage({
+    const message = {
       id: Date.now().toString(),
-      type: 'question',
+      type: 'question' as const,
       content: question,
       timestamp: Date.now(),
-      sender: 'ai'
-    });
+      sender: 'ai' as const
+    };
+    
+    addMessage(message);
+    
+    // Automatically speak the question
+    setTimeout(() => {
+      speakText(question);
+    }, 500);
   };
 
-  const handleSendMessage = () => {
-    if (!currentInput.trim()) return;
+  // Initialize speech recognition and synthesis
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setSpeechSupported(true);
+      synthRef.current = window.speechSynthesis;
+      
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+      
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            transcript += event.results[i][0].transcript;
+          }
+        }
+        if (transcript) {
+          setCurrentTranscript(transcript);
+          handleVoiceInput(transcript);
+        }
+      };
+      
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        setIsRecording(false);
+      };
+      
+      recognition.onend = () => {
+        setIsListening(false);
+        setIsRecording(false);
+      };
+      
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  const handleVoiceInput = (transcript: string) => {
+    if (!transcript.trim()) return;
 
     // Add candidate's answer
     addMessage({
       id: Date.now().toString(),
       type: 'answer',
-      content: currentInput,
+      content: transcript,
       timestamp: Date.now(),
       sender: 'candidate'
     });
 
     // Send to WebSocket
     sendMessage('answer', {
-      content: currentInput,
+      content: transcript,
       phase: interviewPhase
     });
 
-    setCurrentInput("");
+    setCurrentTranscript("");
 
     // Simulate AI response after a delay
     setTimeout(() => {
       generateNextQuestion();
     }, 2000);
+  };
+
+  const speakText = (text: string) => {
+    if (synthRef.current && speechSupported) {
+      // Cancel any ongoing speech
+      synthRef.current.cancel();
+      
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 1;
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
+      
+      synthRef.current.speak(utterance);
+    }
+  };
+
+  const startVoiceRecording = () => {
+    if (recognitionRef.current && speechSupported) {
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+        setIsListening(true);
+      } catch (error) {
+        console.error('Error starting speech recognition:', error);
+      }
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      setIsListening(false);
+    }
+  };
+
+  const toggleVoiceRecording = () => {
+    if (isRecording) {
+      stopVoiceRecording();
+    } else {
+      startVoiceRecording();
+    }
+  };
+
+  const toggleSpeech = () => {
+    if (isSpeaking && synthRef.current) {
+      synthRef.current.cancel();
+      setIsSpeaking(false);
+    }
   };
 
   const generateNextQuestion = () => {
@@ -163,8 +303,7 @@ export const InterviewChat = ({ candidateName, position, jobDescription, onInter
   };
 
   const toggleRecording = () => {
-    setIsRecording(!isRecording);
-    // Implement voice recording functionality here
+    toggleVoiceRecording();
   };
 
   useEffect(() => {
@@ -244,31 +383,73 @@ export const InterviewChat = ({ candidateName, position, jobDescription, onInter
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
+      {/* Voice Controls */}
       <div className="p-4 border-t border-border">
-        <div className="flex gap-2">
-          <Input
-            value={currentInput}
-            onChange={(e) => setCurrentInput(e.target.value)}
-            placeholder="Type your response..."
-            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-            className="flex-1"
-          />
-          <Button
-            onClick={toggleRecording}
-            variant="outline"
-            size="icon"
-            className={isRecording ? 'bg-destructive text-destructive-foreground' : ''}
-          >
-            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-          </Button>
-          <Button onClick={handleSendMessage} size="icon">
-            <Send className="w-4 h-4" />
-          </Button>
+        <div className="flex items-center justify-center gap-4">
+          {!speechSupported ? (
+            <p className="text-sm text-muted-foreground">
+              Speech recognition not supported in this browser
+            </p>
+          ) : (
+            <>
+              <Button
+                onClick={toggleVoiceRecording}
+                variant={isRecording ? "destructive" : "default"}
+                size="lg"
+                className="relative"
+              >
+                {isRecording ? (
+                  <>
+                    <MicOff className="w-5 h-5 mr-2" />
+                    Stop Recording
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-5 h-5 mr-2" />
+                    Start Recording
+                  </>
+                )}
+                {isListening && (
+                  <div className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full animate-pulse" />
+                )}
+              </Button>
+              
+              <Button
+                onClick={toggleSpeech}
+                variant="outline"
+                size="lg"
+                disabled={!isSpeaking}
+              >
+                {isSpeaking ? (
+                  <>
+                    <VolumeX className="w-5 h-5 mr-2" />
+                    Stop Speaking
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-5 h-5 mr-2" />
+                    AI Speaking
+                  </>
+                )}
+              </Button>
+            </>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mt-2">
-          Connection Status: {isConnected ? 'Connected' : 'Simulated Mode'}
-        </p>
+        
+        {currentTranscript && (
+          <div className="mt-3 p-2 bg-muted rounded text-sm">
+            <span className="text-xs text-muted-foreground">Live transcript: </span>
+            {currentTranscript}
+          </div>
+        )}
+        
+        <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+          <span>Connection: {isConnected ? 'Connected' : 'Simulated Mode'}</span>
+          <div className="flex items-center gap-4">
+            {isListening && <span className="text-success">🎤 Listening...</span>}
+            {isSpeaking && <span className="text-ai-primary">🔊 AI Speaking...</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
