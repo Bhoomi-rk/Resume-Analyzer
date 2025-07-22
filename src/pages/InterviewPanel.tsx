@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { InterviewChat } from "@/components/InterviewChat";
 
 type InterviewStatus = 'connecting' | 'ready' | 'in-progress' | 'completed';
 
@@ -46,15 +47,14 @@ const InterviewPanel = () => {
       title: "Interview Started",
       description: `Beginning interview session with ${candidateName}`,
     });
-    
-    // Simulate interview progress
-    setTimeout(() => {
-      setStatus('completed');
-      toast({
-        title: "Interview Completed",
-        description: "Interview session has been completed successfully.",
-      });
-    }, 5000);
+  };
+
+  const completeInterview = () => {
+    setStatus('completed');
+    toast({
+      title: "Interview Completed",
+      description: "Interview session has been completed successfully.",
+    });
   };
 
   const backToConfiguration = () => {
@@ -138,24 +138,12 @@ const InterviewPanel = () => {
         
       case 'in-progress':
         return (
-          <div className="text-center py-12">
-            <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-ai-primary/10 flex items-center justify-center">
-              <PlayCircle className="w-8 h-8 text-ai-primary animate-pulse" />
-            </div>
-            <p className="text-lg text-muted-foreground mb-4">
-              Interview in progress...
-            </p>
-            <p className="text-sm text-muted-foreground">
-              AI is analyzing responses and generating follow-up questions.
-            </p>
-            <div className="mt-6 flex justify-center">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-ai-primary rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-ai-primary rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                <div className="w-2 h-2 bg-ai-primary rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-              </div>
-            </div>
-          </div>
+          <InterviewChat
+            candidateName={candidateName}
+            position={position}
+            jobDescription={jobDescription}
+            onInterviewComplete={completeInterview}
+          />
         );
         
       case 'completed':
